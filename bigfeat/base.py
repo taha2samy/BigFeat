@@ -130,13 +130,13 @@ class BigFeat:
             gen_feats, self.fanova_best = fit_fanova(gen_feats, y, self.task_type, self.n_feats)
 
         return gen_feats
-    def transform(self, X):
+    def transform(self, x):
         """
         Produce features from the fitted BigFeat object.
         """
-        X_scaled = self.scaler.transform(X)
-        n_rows = X_scaled.shape[0]
-        gen_feats = np.zeros((n_rows, len(self.tracking_ids)))
+        x_scaled = self.scaler.transform(x)
+        rows_count = x_scaled.shape[0]
+        gen_feats = np.zeros((rows_count, len(self.tracking_ids)))
 
         for i in range(gen_feats.shape[1]):
             dpth = self.feat_depths[i]
@@ -145,24 +145,24 @@ class BigFeat:
             id_ls = self.tracking_ids[i].copy()
 
             gen_feats[:, i] = feat_with_depth_gen(
-                X_scaled, dpth, op_ls, id_ls, 
+                x_scaled, dpth, op_ls, id_ls, 
                 self.binary_operators, self.unary_operators
             )
 
-        gen_feats = np.hstack((gen_feats, X_scaled))
+        gen_feats = np.hstack((gen_feats, x_scaled))
 
         if self.selection == 'fAnova':
-            gen_feats = self.fAnova_best.transform(gen_feats)
+            gen_feats = self.fanova_best.transform(gen_feats)
 
         return gen_feats
 
-    def select_estimator(self, X, y, estimators_names=None):
+    def select_estimator(self, x, y, estimators_names=None):
         """
         Select the best estimator based on cross-validation.
         
         Parameters:
         -----------
-        X : array-like
+        x : array-like
             Feature matrix.
         y : array-like
             Target vector.
@@ -175,7 +175,7 @@ class BigFeat:
             Fitted best estimator.
         """
         return eval_select_estimator(
-            X, y, 
+            x, y, 
             task_type=self.task_type, 
             n_jobs=self.n_jobs, 
             estimators_names=estimators_names
