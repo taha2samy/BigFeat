@@ -68,7 +68,7 @@ def group_by(ar1, ar2):
     """
     Groups the second array by the values of the first array and applies a randomly selected aggregation.
     """
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=42)
     group_by_ops = [np.mean, np.std, np.max, np.min, np.sum, mode, len, ar_range, np.median, percentile_25, percentile_75]
     group_by_op = rng.choice(group_by_ops)
     temp_df = pd.DataFrame({'ar1': ar1, 'ar2': ar2})
