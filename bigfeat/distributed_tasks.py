@@ -9,16 +9,7 @@ import numpy as np
 from .generator import feat_with_depth
 from .importance import get_feature_importances
 
-"""
-distributed_tasks.py
---------------------
-Wraps core functions into Ray remote tasks for distributed execution.
-"""
 
-import ray
-import numpy as np
-from .generator import feat_with_depth
-from .importance import get_feature_importances
 
 @ray.remote
 def remote_generate_batch(x_ref, depths, rng_seed, ig_vector, operators, 
