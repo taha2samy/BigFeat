@@ -61,12 +61,12 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}    
         with:
           args: >
-            -X
             -Dsonar.projectKey=taha2samy_bigfeat
             -Dsonar.organization=taha2samy
             -Dsonar.sources=bigfeat
             -Dsonar.tests=tests
             -Dsonar.python.version=3.10
             -Dsonar.exclusions=benchmarking/**,docs/**,metafeatures_training/**
-            -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.python.xunit.reportPaths=pytest-report.xml
+            -Dsonar.python.coverage.reportPaths=${{ github.workspace }}/coverage.xml
+            -Dsonar.python.xunit.reportPath=${{ github.workspace }}/pytest-report.xml
+            -Dsonar.python.xunit.reportPaths=${{ github.workspace }}/pytest-report.xml
