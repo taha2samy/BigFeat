@@ -33,7 +33,7 @@ jobs:
 
       - name: Run Tests and Generate Coverage
         run: |
-          pytest tests/ --cov=bigfeat --cov-report=xml:coverage.xml --junitxml=pytest-report.xml -o junit_family=xunit1
+          python -m pytest tests/ --cov=bigfeat --cov-report=xml:coverage.xml --junitxml=pytest-report.xml -o junit_family=xunit1
       
       
       - name: SonarQube Scan
