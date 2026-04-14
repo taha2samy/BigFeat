@@ -51,22 +51,52 @@ class BigFeat:
             ig_vector = split_vec
         return ig_vector
 
+
+    def _get_initial_ig(self, x_ref, y_ref, random_state, split_feats):
+        """Helper to calculate initial feature importance."""
+        future = remote_get_importance.remote(
+            x_ref, y_ref, "avg", self.task_type, random_state, self.n_jobs
+        )
+        importance_sum, splits_sum = ray.get(future)
+        ig_vector = importance_sum / (importance_sum.sum() + 1e-9)
+        
+        if split_feats in ["comb", "splits"]:
+            split_vec = splits_sum / (splits_sum.sum() + 1e-9)
+            if split_feats == "comb":
+                ig_vector = np.multiply(ig_vector, split_vec)
+            else:
+                ig_vector = split_vec
+            ig_vector /= (ig_vector.sum() + 1e-9)
+        return ig_vector
+
+    def _generate_iteration_batches(self, x_ref, iteration, num_to_gen, batch_size, random_state):
+        """Helper to manage Ray tasks batching."""
+        gen_futures = []
+        for i in range(0, num_to_gen, batch_size):
+            curr_size = min(batch_size, num_to_gen - i)
+            batch_depths = [self.rng.choice(self.depth_range, p=self.depth_weights) for _ in range(curr_size)]
+            gen_futures.append(remote_generate_batch.remote(
+                x_ref, batch_depths, random_state + i + iteration,
+                self.ig_vector, self.operators, self.operator_weights,
+                self.binary_operators, self.unary_operators))
+        return gen_futures
+
+    def _update_weights(self, selected_ops):
+        """Update operator weights based on their usage in selected features."""
+        for i_op, op in enumerate(self.operators):
+            for feat in selected_ops:
+                if any(op == f_op[0] for f_op in feat):
+                    self.imp_operators[i_op] += 1
+        self.operator_weights = self.imp_operators / self.imp_operators.sum()
+
     def fit(self, x, y, gen_size=5, random_state=0, iterations=5, estimator='avg', 
             feat_imps=True, split_feats=None, check_corr=True, selection='stability', combine_res=True):
-        
         initialize_ray(self.options)
-        self.selection = selection
-        self.imp_operators = np.ones(len(self.operators))
-        self.operator_weights = self.imp_operators / self.imp_operators.sum()
-        
-        self.n_feats, self.n_rows = x.shape[1], x.shape[0]
-        self.ig_vector = np.ones(self.n_feats) / self.n_feats
         self.rng = np.random.default_rng(seed=random_state)
-        
-        iters_comb = np.zeros((self.n_rows, self.n_feats * iterations))
-        depths_comb = np.zeros(self.n_feats * iterations)
-        ids_comb, ops_comb = [None] * (self.n_feats * iterations), [None] * (self.n_feats * iterations)
-        
+        self.n_feats, self.n_rows = x.shape[1], x.shape[0]
+        self.selection, self.imp_operators = selection, np.ones(len(self.operators))
+        self.operator_weights = self.imp_operators / self.imp_operators.sum()
+        self.ig_vector = np.ones(self.n_feats) / self.n_feats
         self.depth_range = np.arange(3) + 1
         self.depth_weights = (1 / (2 ** self.depth_range)) / (1 / (2 ** self.depth_range)).sum()
         
@@ -75,23 +105,17 @@ class BigFeat:
         x_ref, y_ref = ray.put(x_scaled), ray.put(y)
         
         if feat_imps:
-            self.ig_vector = self._calculate_initial_importance(x_ref, y_ref, random_state, split_feats)
-                
+            self.ig_vector = self._get_initial_ig(x_ref, y_ref, random_state, split_feats)
+
         num_to_gen = self.n_feats * gen_size
-        num_cpus = int(ray.cluster_resources().get("CPU", 1))
-        batch_size = max(1, num_to_gen // (num_cpus * 2))
+        batch_size = max(1, num_to_gen // (int(ray.cluster_resources().get("CPU", 1)) * 2))
+        iters_comb = np.zeros((self.n_rows, self.n_feats * iterations))
+        depths_comb = np.zeros(self.n_feats * iterations)
+        ids_comb, ops_comb = [None] * (self.n_feats * iterations), [None] * (self.n_feats * iterations)
 
         for iteration in range(iterations):
-            gen_futures = []
-            for i in range(0, num_to_gen, batch_size):
-                curr_batch = min(batch_size, num_to_gen - i)
-                batch_depths = [self.rng.choice(self.depth_range, p=self.depth_weights) for _ in range(curr_batch)]
-                gen_futures.append(remote_generate_batch.remote(
-                    x_ref, batch_depths, random_state + i + iteration,
-                    self.ig_vector, self.operators, self.operator_weights,
-                    self.binary_operators, self.unary_operators))
-            
-            flattened = [item for batch in ray.get(gen_futures) for item in batch]
+            futures = self._generate_iteration_batches(x_ref, iteration, num_to_gen, batch_size, random_state)
+            flattened = [item for batch in ray.get(futures) for item in batch]
             gen_feats_iter = np.column_stack([res[0] for res in flattened])
             
             imps_iter, _ = get_feature_importances(gen_feats_iter, y, estimator, random_state, self.task_type, n_jobs=self.n_jobs)
@@ -103,20 +127,17 @@ class BigFeat:
             
             for k, idx in enumerate(feat_args):
                 ids_comb[start + k], ops_comb[start + k] = flattened[idx][2], flattened[idx][1]
-                for i_op, op in enumerate(self.operators):
-                    if any(op == f_op[0] for f_op in flattened[idx][1]):
-                        self.imp_operators[i_op] += 1
-            self.operator_weights = self.imp_operators / self.imp_operators.sum()
             
+            self._update_weights([flattened[idx][1] for idx in feat_args])
+
+        # Final selection
         if selection == 'stability' and iterations > 1 and combine_res:
             imps_f, _ = get_feature_importances(iters_comb, y, estimator, random_state, self.task_type, n_jobs=self.n_jobs)
             feat_args = np.argsort(imps_f)[-self.n_feats:]
-            gen_feats = iters_comb[:, feat_args]
-            self.tracking_ids, self.tracking_ops = [ids_comb[i] for i in feat_args], [ops_comb[i] for i in feat_args]
+            gen_feats, self.tracking_ids, self.tracking_ops = iters_comb[:, feat_args], [ids_comb[i] for i in feat_args], [ops_comb[i] for i in feat_args]
             self.feat_depths = depths_comb[feat_args]
         else:
-            gen_feats = iters_comb[:, -self.n_feats:]
-            self.tracking_ids, self.tracking_ops = ids_comb[-self.n_feats:], ops_comb[-self.n_feats:]
+            gen_feats, self.tracking_ids, self.tracking_ops = iters_comb[:, -self.n_feats:], ids_comb[-self.n_feats:], ops_comb[-self.n_feats:]
             self.feat_depths = depths_comb[-self.n_feats:]
 
         if selection == 'stability' and check_corr:
@@ -130,6 +151,14 @@ class BigFeat:
             gen_feats, self.fanova_best = fit_fanova(gen_feats, y, self.task_type, self.n_feats)
 
         return gen_feats
+
+
+
+
+
+
+
+
     def transform(self, x):
         """
         Produce features from the fitted BigFeat object.
