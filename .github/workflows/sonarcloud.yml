@@ -47,4 +47,4 @@ jobs:
             -Dsonar.python.version=3.10
             -Dsonar.exclusions=benchmarking/**,tests/**,docs/**,metafeatures_training/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.python.xunit.reportPath=pytest-report.xml
+            -Dsonar.python.xunit.reportPaths=pytest-report.xml
