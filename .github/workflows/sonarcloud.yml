@@ -22,6 +22,16 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+          pip install -e . 
+
+      - name: Run Tests and Generate Coverage
+        run: |
+          pytest tests/ --cov=bigfeat --cov-report=xml
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v5
@@ -35,3 +45,4 @@ jobs:
             -Dsonar.sources=bigfeat
             -Dsonar.python.version=3.10
             -Dsonar.exclusions=benchmarking/**,tests/**,docs/**,metafeatures_training/**
+            -Dsonar.python.coverage.reportPaths=coverage.xml
