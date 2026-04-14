@@ -34,8 +34,26 @@ jobs:
       - name: Run Tests and Generate Coverage
         run: |
           pytest tests/ --cov=bigfeat --cov-report=xml:coverage.xml --junitxml=pytest-report.xml -o junit_family=xunit1
-      
-      
+
+      - name: 🕵️ Debug - Verify Files and Paths
+        run: |
+          echo "================================================="
+          echo "1. Current Working Directory:"
+          pwd
+          echo "================================================="
+          echo "2. Listing files in current directory:"
+          ls -la
+          echo "================================================="
+          echo "3. Checking if pytest-report.xml exists:"
+          if [ -f "pytest-report.xml" ]; then echo "✅ pytest-report.xml FOUND"; else echo "❌ pytest-report.xml MISSING"; fi
+          echo "================================================="
+          echo "4. Checking if coverage.xml exists:"
+          if [ -f "coverage.xml" ]; then echo "✅ coverage.xml FOUND"; else echo "❌ coverage.xml MISSING"; fi
+          echo "================================================="
+          echo "5. Content of pytest-report.xml (First 20 lines) to verify file paths:"
+          head -n 20 pytest-report.xml
+          echo "================================================="
+
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7.1.0
         env:
@@ -49,6 +67,6 @@ jobs:
             -Dsonar.tests=tests
             -Dsonar.python.version=3.10
             -Dsonar.exclusions=benchmarking/**,docs/**,metafeatures_training/**
-            -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.python.xunit.reportPaths=pytest-report.xml
-            -Dsonar.scm.exclusions.disabled=true
+            -Dsonar.python.coverage.reportPaths=${{ github.workspace }}/coverage.xml
+            -Dsonar.python.xunit.reportPath=${{ github.workspace }}/pytest-report.xml
+            -Dsonar.python.xunit.reportPaths=${{ github.workspace }}/pytest-report.xml
