@@ -34,8 +34,6 @@ jobs:
       - name: Run Tests and Generate Coverage
         run: |
           pytest tests/ --cov=bigfeat --cov-report=xml --junitxml=pytest-report.xml
-
-
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v5
         env:
