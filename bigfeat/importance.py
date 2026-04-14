@@ -11,25 +11,26 @@ from sklearn.metrics import roc_auc_score, r2_score
 import lightgbm as lgb
 
 
-def get_feature_importances(X, y, estimator, random_state, task_type, sample_count=1, sample_size=3, n_jobs=1):
+def get_feature_importances(x, y, estimator, random_state, task_type, sample_count=1, sample_size=3, n_jobs=1):
     """Return feature importances by specified method"""
-    n_rows = X.shape[0]
-    importance_sum = np.zeros(X.shape[1])
+    rng = np.random.default_rng(random_state)
+    n_rows = x.shape[0]
+    importance_sum = np.zeros(x.shape[1])
     total_estimators = []
     
-    for sampled in range(sample_count):
-        sampled_ind = np.random.choice(np.arange(n_rows), size=n_rows // sample_size, replace=False)
-        sampled_X = X[sampled_ind]
+    for _ in range(sample_count):
+        sampled_ind = rng.choice(n_rows, size=n_rows // sample_size, replace=False)
+        sampled_x = x[sampled_ind]
         sampled_y = np.take(y, sampled_ind)
         
         # Different behavior based on task type
         if estimator == "rf":
             if task_type == 'classification':
-                estm = RandomForestClassifier(random_state=random_state, n_jobs=n_jobs)
+                estm = RandomForestClassifier(random_state=random_state, n_jobs=n_jobs, min_samples_leaf=1, max_features='sqrt')
             else:  # regression
-                estm = RandomForestRegressor(random_state=random_state, n_jobs=n_jobs)
+                estm = RandomForestRegressor(random_state=random_state, n_jobs=n_jobs, min_samples_leaf=1, max_features='sqrt')
             
-            estm.fit(sampled_X, sampled_y)
+            estm.fit(sampled_x, sampled_y)
             total_importances = estm.feature_importances_
             estimators = estm.estimators_
             total_estimators += estimators
@@ -37,27 +38,27 @@ def get_feature_importances(X, y, estimator, random_state, task_type, sample_cou
         elif estimator == "avg":
             # For classification
             if task_type == 'classification':
-                clf = RandomForestClassifier(random_state=random_state, n_jobs=n_jobs)
-                clf.fit(sampled_X, sampled_y)
+                clf = RandomForestClassifier(random_state=random_state, n_jobs=n_jobs, min_samples_leaf=1, max_features='sqrt')
+                clf.fit(sampled_x, sampled_y)
                 rf_importances = clf.feature_importances_
                 estimators = clf.estimators_
                 total_estimators += estimators
                 
                 # LightGBM for classification
-                train_data = lgb.Dataset(sampled_X, label=sampled_y)
+                train_data = lgb.Dataset(sampled_x, label=sampled_y)
                 param = {'num_leaves': 31, 'objective': 'binary', 'verbose': -1}
                 param['metric'] = 'auc'
                 
             # For regression
             else:
-                clf = RandomForestRegressor(random_state=random_state, n_jobs=n_jobs)
-                clf.fit(sampled_X, sampled_y)
+                clf = RandomForestRegressor(random_state=random_state, n_jobs=n_jobs, min_samples_leaf=1, max_features='sqrt')
+                clf.fit(sampled_x, sampled_y)
                 rf_importances = clf.feature_importances_
                 estimators = clf.estimators_
                 total_estimators += estimators
                 
                 # LightGBM for regression
-                train_data = lgb.Dataset(sampled_X, label=sampled_y)
+                train_data = lgb.Dataset(sampled_x, label=sampled_y)
                 param = {'num_leaves': 31, 'objective': 'regression', 'verbose': -1}
                 param['metric'] = 'rmse'
             
@@ -73,29 +74,29 @@ def get_feature_importances(X, y, estimator, random_state, task_type, sample_cou
     return importance_sum, total_estimators
 
 
-def get_weighted_feature_importances(X, y, estimator, random_state, task_type, n_jobs=-1):
+def get_weighted_feature_importances(x, y, random_state, task_type, n_jobs=-1):
     """Return feature importances weighted by model performance"""
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=random_state)
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=0.2, random_state=random_state)
     
     # Choose appropriate model based on task type
     if task_type == 'classification':
-        estm = RandomForestClassifier(random_state=random_state, n_jobs=n_jobs)
+        estm = RandomForestClassifier(random_state=random_state, n_jobs=n_jobs, min_samples_leaf=1, max_features='sqrt')
     else:  # regression
-        estm = RandomForestRegressor(random_state=random_state, n_jobs=n_jobs)
+        estm = RandomForestRegressor(random_state=random_state, n_jobs=n_jobs, min_samples_leaf=1, max_features='sqrt')
         
-    estm.fit(X_train, y_train)
+    estm.fit(x_train, y_train)
     model = estm
-    imps = np.zeros((len(model.estimators_), X.shape[1]))
+    imps = np.zeros((len(model.estimators_), x.shape[1]))
     scores = np.zeros(len(model.estimators_))
     
     for i, each in enumerate(model.estimators_):
         # Different scoring metrics based on task type
         if task_type == 'classification':
-            y_probas_train = each.predict_proba(X_test)[:, 1]
+            y_probas_train = each.predict_proba(x_test)[:, 1]
             score = roc_auc_score(y_test, y_probas_train)
         else:  # regression
-            y_pred_train = each.predict(X_test)
+            y_pred_train = each.predict(x_test)
             score = r2_score(y_test, y_pred_train)
             
         imps[i] = each.feature_importances_
